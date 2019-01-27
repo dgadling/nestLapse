@@ -2,14 +2,19 @@ import boto3
 from datetime import datetime
 from pytz import timezone
 import logging
+from typing import Dict, Tuple, Any
 
-BUCKET_NAME = "nestlapse"
 
-logging.basicConfig(
-    format="%(asctime)s - %(levelname)s - %(module)s: %(message)s", level=logging.INFO
-)
 
-s3 = boto3.resource("s3")
+def closest_to(
+    target: int, options: Dict[int, Any], delt: int = 3600
+) -> Tuple[int, Any]:
+    candidates = (
+        (abs(time_s - target), o)
+        for time_s, o in options.items()
+        if abs(time_s - target) <= delt and o.size > 0
+    )
+    return min(candidates)
 
 
 def get_ts(obj_key: str) -> int:
@@ -21,45 +26,69 @@ def get_ts(obj_key: str) -> int:
     return int(file_name.split("_")[-1])
 
 
-camera_timezone = timezone("America/Los_Angeles")
-bucket = s3.Bucket(BUCKET_NAME)
+def main() -> None:
+    logging.basicConfig(
+        format="%(asctime)s - %(levelname)s - %(module)s: %(message)s", level=logging.INFO
+    )
 
-cameras = [
-    "backdoor",
-    "backpatio",
-    "continuous/backdoor",
-    "continuous/backpatio",
-]
-for camera in cameras:
-    raw_files = {get_ts(o.key): o for o in bucket.objects.filter(Prefix=f"{camera}/1")}
-    processed = {get_ts(o.key): o for o in bucket.objects.filter(Prefix=f"{camera}/2")}
+    BUCKET_NAME = "nestlapse"
+    s3 = boto3.resource("s3")
+    bucket = s3.Bucket(BUCKET_NAME)
 
-    missing = set(raw_files.keys()) - set(processed.keys())
+    camera_timezone = timezone("America/Los_Angeles")
+    cameras = ["backdoor", "backpatio", "continuous/backdoor", "continuous/backpatio"]
 
-    logging.info(f"{camera}: Missing {len(missing)}/{len(raw_files)}")
+    raw_files = {}
+    processed = {}
+    for camera in cameras:
+        logging.info(f"Fetching raw files for {camera}")
+        raw_files[camera] = {
+            get_ts(o.key): o for o in bucket.objects.filter(Prefix=f"{camera}/1")
+        }
 
-    copy_results = {}
-    for ts in missing:
-        orig_obj = raw_files[ts]
-        if orig_obj.size == 0:
-            if "continuous" not in camera:
-                logging.error(f"{camera}: {orig_obj.key} is 0 bytes! Need a strategy!")
-            continue
+        logging.info(f"Fetching processed files for {camera}")
+        processed[camera] = {
+            get_ts(o.key): o for o in bucket.objects.filter(Prefix=f"{camera}/2")
+        }
 
-        copy_src = {"Bucket": BUCKET_NAME, "Key": orig_obj.key}
-        ts_int = int(orig_obj.key.replace(f"{camera}/", "").replace(".jpg", ""))
-        ts = datetime.fromtimestamp(ts_int, tz=camera_timezone)
-        new_obj_key = f"{camera}/{ts.strftime('%Y-%m-%d_%H:%M:%S_%Z')}_{ts_int}.jpg"
-        logging.info(f"{camera}: {orig_obj.key} -> {new_obj_key}")
-        copy_results[ts] = s3.Object(BUCKET_NAME, new_obj_key).copy_from(
-            CopySource=copy_src
-        )
-    failures = [
-        (k, v)
-        for k, v in copy_results.items()
-        if v["ResponseMetadata"]["HTTPStatusCode"] != 200
-    ]
-    if failures:
-        logging.info(f"Catching up {camera} had {len(failures)} failures")
-        for k, v in failures:
-            logging.info(f"{k}: {v}")
+    for camera in cameras:
+        missing = set(raw_files[camera].keys()) - set(processed[camera].keys())
+
+        logging.info(f"{camera}: Missing {len(missing)}/{len(raw_files[camera])}")
+
+        copy_results = {}
+        for ts in missing:
+            orig_obj = raw_files[camera][ts]
+            if orig_obj.size == 0:
+                if "continuous" in camera:
+                    continue
+
+                logging.error(f"{camera}: {orig_obj.key} is 0 bytes!")
+                try:
+                    delta, closest = closest_to(ts, raw_files[f"continuous/{camera}"])
+                except ValueError:
+                    logging.warning(f"Couldn't find a candidate replacement :(")
+                    continue
+                logging.info(f"{closest} is closest to {ts} ({delta} s); could work")
+
+            copy_src = {"Bucket": BUCKET_NAME, "Key": orig_obj.key}
+            ts_int = int(orig_obj.key.replace(f"{camera}/", "").replace(".jpg", ""))
+            ts = datetime.fromtimestamp(ts_int, tz=camera_timezone)
+            new_obj_key = f"{camera}/{ts.strftime('%Y-%m-%d_%H:%M:%S_%Z')}_{ts_int}.jpg"
+            logging.info(f"{camera}: {orig_obj.key} -> {new_obj_key}")
+            copy_results[ts] = s3.Object(BUCKET_NAME, new_obj_key).copy_from(
+                CopySource=copy_src
+            )
+        failures = [
+            (k, v)
+            for k, v in copy_results.items()
+            if v["ResponseMetadata"]["HTTPStatusCode"] != 200
+        ]
+        if failures:
+            logging.info(f"Catching up {camera} had {len(failures)} failures")
+            for k, v in failures:
+                logging.info(f"{k}: {v}")
+
+
+if __name__ == "__main__":
+    main()
