@@ -41,7 +41,12 @@ def main() -> None:
         logging.info(f"{camera}: Fetching raw files")
         raw_files = {
             get_ts(o.key): o for o in bucket.objects.filter(Prefix=f"{camera}/1")
+            if o.size > 0
         }
+
+        if not raw_files:
+            logging.info(f"{camera}: No interesting raw files! Skip for now")
+            continue
 
         logging.info(f"{camera}: Fetching processed files")
         processed = {
