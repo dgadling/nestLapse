@@ -5,18 +5,6 @@ import logging
 from typing import Dict, Tuple, Any
 
 
-
-def closest_to(
-    target: int, options: Dict[int, Any], delt: int = 3600
-) -> Tuple[int, Any]:
-    candidates = (
-        (abs(time_s - target), o)
-        for time_s, o in options.items()
-        if abs(time_s - target) <= delt and o.size > 0
-    )
-    return min(candidates)
-
-
 def get_ts(obj_key: str) -> int:
     file_name = obj_key.split("/")[-1].split(".")[0]
 
@@ -64,12 +52,7 @@ def main() -> None:
                     continue
 
                 logging.error(f"{camera}: {orig_obj.key} is 0 bytes!")
-                try:
-                    delta, closest = closest_to(ts, raw_files[f"continuous/{camera}"])
-                except ValueError:
-                    logging.warning(f"Couldn't find a candidate replacement :(")
-                    continue
-                logging.info(f"{closest} is closest to {ts} ({delta} s); could work")
+                continue
 
             copy_src = {"Bucket": BUCKET_NAME, "Key": orig_obj.key}
             ts_int = int(orig_obj.key.replace(f"{camera}/", "").replace(".jpg", ""))
