@@ -29,7 +29,11 @@ def main() -> None:
     bucket_name = "nestlapse"
     s3 = boto3.resource("s3")
     bucket = s3.Bucket(bucket_name)
-    batch_size = 900
+
+    # If we had 24 hrs of daylight there'd be this many in the continuous folder per day
+    # Since we don't live in extreme latitudes that's not the case and this is a safe
+    # upper limit that'll let us get through any backlog, eventually.
+    batch_size = (24 * 60) / 5
 
     cameras = ["backdoor", "backpatio", "continuous/backdoor", "continuous/backpatio"]
 
