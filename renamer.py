@@ -19,9 +19,9 @@ def main() -> None:
         format="%(asctime)s - %(levelname)s - %(module)s: %(message)s", level=logging.INFO
     )
 
-    BUCKET_NAME = "nestlapse"
+    bucket_name = "nestlapse"
     s3 = boto3.resource("s3")
-    bucket = s3.Bucket(BUCKET_NAME)
+    bucket = s3.Bucket(bucket_name)
 
     camera_timezone = timezone("America/Los_Angeles")
     cameras = ["backdoor", "backpatio", "continuous/backdoor", "continuous/backpatio"]
@@ -29,17 +29,21 @@ def main() -> None:
     raw_files = {}
     processed = {}
     for camera in cameras:
-        logging.info(f"Fetching raw files for {camera}")
+        logging.info(f"{camera}: Fetching raw files")
         raw_files[camera] = {
             get_ts(o.key): o for o in bucket.objects.filter(Prefix=f"{camera}/1")
+            if o.size > 0
         }
 
-        logging.info(f"Fetching processed files for {camera}")
+        if not raw_files:
+            logging.info(f"{camera}: No raw files!")
+            continue
+
+        logging.info(f"{camera}: Fetching processed files")
         processed[camera] = {
             get_ts(o.key): o for o in bucket.objects.filter(Prefix=f"{camera}/2")
         }
 
-    for camera in cameras:
         missing = set(raw_files[camera].keys()) - set(processed[camera].keys())
 
         logging.info(f"{camera}: Missing {len(missing)}/{len(raw_files[camera])}")
@@ -51,15 +55,15 @@ def main() -> None:
                 if "continuous" in camera:
                     continue
 
-                logging.error(f"{camera}: {orig_obj.key} is 0 bytes!")
+                logging.error(f"{camera}: {orig_obj.key} is 0 bytes?!")
                 continue
 
-            copy_src = {"Bucket": BUCKET_NAME, "Key": orig_obj.key}
+            copy_src = {"Bucket": bucket_name, "Key": orig_obj.key}
             ts_int = int(orig_obj.key.replace(f"{camera}/", "").replace(".jpg", ""))
             ts = datetime.fromtimestamp(ts_int, tz=camera_timezone)
             new_obj_key = f"{camera}/{ts.strftime('%Y-%m-%d_%H:%M:%S_%Z')}_{ts_int}.jpg"
             logging.info(f"{camera}: {orig_obj.key} -> {new_obj_key}")
-            copy_results[ts] = s3.Object(BUCKET_NAME, new_obj_key).copy_from(
+            copy_results[ts] = s3.Object(bucket_name, new_obj_key).copy_from(
                 CopySource=copy_src
             )
         failures = [
@@ -68,7 +72,7 @@ def main() -> None:
             if v["ResponseMetadata"]["HTTPStatusCode"] != 200
         ]
         if failures:
-            logging.info(f"Catching up {camera} had {len(failures)} failures")
+            logging.info(f"{camera}: Catching up had {len(failures)} failures")
             for k, v in failures:
                 logging.info(f"{k}: {v}")
 
