@@ -23,7 +23,8 @@ def find_safe_to_delete(raw_files, processed):
 
 def main() -> None:
     logging.basicConfig(
-        format="%(asctime)s - %(levelname)s - %(module)s: %(message)s", level=logging.INFO
+        format="%(asctime)s - %(levelname)s - %(module)s: %(message)s",
+        level=logging.INFO,
     )
 
     bucket_name = "nestlapse"
@@ -40,7 +41,8 @@ def main() -> None:
     for camera in cameras:
         logging.info(f"{camera}: Fetching raw files")
         raw_files = {
-            get_ts(o.key): o for o in bucket.objects.filter(Prefix=f"{camera}/1")
+            get_ts(o.key): o
+            for o in bucket.objects.filter(Prefix=f"{camera}/1")
             if o.size > 0
         }
 
@@ -60,13 +62,13 @@ def main() -> None:
 
         logging.info(f"{camera}: {len(to_del)}/{len(raw_files)} can go")
 
-        batch = to_del[:min(len(to_del), batch_size)]
-        delete_req = {
-            'Objects': [{'Key': f"{camera}/{k}.jpg"} for k in batch],
-        }
+        batch = to_del[: min(len(to_del), batch_size)]
+        delete_req = {"Objects": [{"Key": f"{camera}/{k}.jpg"} for k in batch]}
         logging.info(f"{camera}: Going to delete {len(batch)}")
         res = bucket.delete_objects(Delete=delete_req)
-        logging.info(f"{camera}: Successfully deleted {len(res['Deleted'])}/{len(batch)}")
+        logging.info(
+            f"{camera}: Successfully deleted {len(res['Deleted'])}/{len(batch)}"
+        )
 
 
 if __name__ == "__main__":

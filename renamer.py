@@ -2,7 +2,6 @@ import boto3
 from datetime import datetime
 from pytz import timezone
 import logging
-from typing import Dict, Tuple, Any
 
 
 def get_ts(obj_key: str) -> int:
@@ -16,7 +15,8 @@ def get_ts(obj_key: str) -> int:
 
 def main() -> None:
     logging.basicConfig(
-        format="%(asctime)s - %(levelname)s - %(module)s: %(message)s", level=logging.INFO
+        format="%(asctime)s - %(levelname)s - %(module)s: %(message)s",
+        level=logging.INFO,
     )
 
     bucket_name = "nestlapse"
@@ -31,7 +31,8 @@ def main() -> None:
     for camera in cameras:
         logging.info(f"{camera}: Fetching raw files")
         raw_files[camera] = {
-            get_ts(o.key): o for o in bucket.objects.filter(Prefix=f"{camera}/1")
+            get_ts(o.key): o
+            for o in bucket.objects.filter(Prefix=f"{camera}/1")
             if o.size > 0
         }
 
